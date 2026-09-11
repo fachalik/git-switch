@@ -2,7 +2,7 @@
 name = "gitswitcher"
 version = "0.2.0"
 description = "Manage and see your git identities"
-authors = ["FA Chalik"]
+authors = ["fachalik"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
