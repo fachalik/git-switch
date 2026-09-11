@@ -69,6 +69,28 @@ export function useOverview() {
     };
   }, []);
 
+  // Switching identity from the menu bar moves settings and writes config
+  // files, so the snapshot above is not enough — everything the window renders
+  // is stale. Re-read it.
+  useEffect(() => {
+    const unlisten = listen("store-changed", () => {
+      void refresh();
+    });
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, [refresh]);
+
+  // The menu bar has nowhere to report a failure of its own.
+  useEffect(() => {
+    const unlisten = listen<string>("tray-error", (event) => {
+      toast.error(event.payload);
+    });
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, []);
+
   /** Wrap a command so every failure surfaces, never a silent no-op. */
   const run = useCallback<RunCommand>(async (key, command) => {
     setPending(key);

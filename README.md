@@ -35,6 +35,8 @@ config never does out loud: **who am I right now?**
 | **Generate the config** | Writes an SSH `Host` stanza per profile plus the git `includeIf` rules mapping folders to identities. Every write is previewed as a diff, is idempotent, and backs up the original to `.bak`. |
 | **Set the global identity** | Pick which profile supplies the global `[user]` name and email — the fallback for every repo no folder rule covers. |
 | **See the active identity** | The menu bar shows the alias in effect, or a loud **Unregistered** when the current email matches no profile. |
+| **Switch from the menu bar** | The tray menu lists every profile with a check mark on the current global identity; picking another one switches and writes the config there and then, no window needed. |
+| **Stay out of the way** | It runs in the background as a menu bar app — no Dock icon, no app switcher entry. Closing the window leaves it running; the Dock icon comes back only while the window is open. |
 | **Generate SSH keys** | Creates an ed25519 keypair via `ssh-keygen` and hands you the public key to register with the host. |
 | **Move to a new laptop** | Export every profile to one JSON file, import it on the new machine, regenerate keys there. |
 
@@ -151,6 +153,34 @@ The app never guesses at git's config precedence — it asks git:
 
 Pick a watched folder and the menu bar tracks it (polled every 10 seconds);
 with none picked it reports your global identity.
+
+### Running in the background
+
+The app launches straight into the menu bar with its window hidden — except on
+a first run, where there are no profiles yet and nothing in the menu bar to
+recognise, so the window opens for you. **Open Git Switcher** in the tray menu
+(or `Cmd+O` while the menu is open) brings it back, closing the window hides it
+again, and **Quit** is the only thing that stops it.
+
+macOS calls this an *accessory* app: no Dock icon and no app switcher entry
+while it sits in the background. The window needs the standard Edit menu for
+`Cmd+C`/`Cmd+V` in its text fields, so the app switches back to a regular app
+for as long as a window is showing and returns to the background when it is
+hidden.
+
+To have it there after a reboot, add **Git Switcher.app** under System
+Settings → General → Login Items.
+
+### Switching from the menu bar
+
+The tray menu lists every profile below the current identity, with a check mark
+on whichever one supplies the global `[user]` section. Picking another one is
+the same operation as the window's global-identity dropdown followed by
+**Apply** — with one difference: it writes immediately instead of showing you
+the diff first, because a switch you have to confirm in a dialog is not a menu
+bar switch. The write itself is identical: idempotent, and backing every file
+up to `.bak` first. Folder rules still win over it, exactly as they do when the
+change is made in the window.
 
 ## Security
 

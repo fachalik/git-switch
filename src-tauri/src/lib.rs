@@ -13,7 +13,7 @@ pub mod status;
 pub mod store;
 pub mod tray;
 
-use tauri::WindowEvent;
+use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,7 +22,21 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
+            // A menu bar app lives in the menu bar: no Dock icon, no app
+            // switcher entry, nothing to quit by accident. The policy goes back
+            // to Regular while the window is up (see `tray::show_window`), so
+            // that window still gets the menu bar its text fields need.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             tray::build(app.handle())?;
+
+            // The window starts hidden, which on a first run is indistinguishable
+            // from a launch that failed — there is nothing in the menu bar to
+            // recognise yet either. Show it until there is a profile to show.
+            if store::load().map(|s| s.profiles.is_empty()).unwrap_or(true) {
+                tray::show_window(app.handle());
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -31,7 +45,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.hide();
+                    tray::hide_window(window.app_handle());
                 }
             }
         })

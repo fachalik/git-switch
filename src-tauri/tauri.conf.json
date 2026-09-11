@@ -18,7 +18,8 @@
         "height": 760,
         "minWidth": 880,
         "minHeight": 600,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Visible",
+        "visible": false
       }
     ],
     "security": {
