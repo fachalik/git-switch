@@ -1,47 +1,93 @@
 # Git Switcher
 
-A local, macOS menu bar app for managing several Git identities on one machine.
-It manages the config files you would otherwise edit by hand — `~/.ssh/config`,
-`~/.gitconfig`, and one `~/.gitconfig-<alias>` per account — and shows in the
-menu bar which identity a commit would actually use.
+A macOS menu bar app for juggling several Git identities on one machine — work,
+personal, a client — without editing dotfiles by hand or pushing a commit as
+the wrong account.
 
-Built with Tauri v2 (Rust) + React + TypeScript + Tailwind + shadcn/ui. No
-accounts, no network calls, no telemetry.
+It manages the three things that make multi-account git work (`~/.ssh/config`,
+`~/.gitconfig`, and one `~/.gitconfig-<alias>` per account), previews every
+change as a diff before writing it, and shows in the menu bar which identity a
+commit would actually use right now.
+
+Local-only: no accounts, no network calls, no telemetry. Built with Tauri v2
+(Rust) + React + TypeScript + Tailwind + shadcn/ui.
+
+---
+
+## The problem
+
+You clone a repo, work for an hour, push — and the commits are attributed to
+your personal email on a work repo. The fix is well known: SSH host aliases,
+plus git's `includeIf` to pick an identity per folder. The catch is that it
+lives across three config files, is easy to get subtly wrong, and gives you no
+feedback until a commit lands under the wrong name.
+
+Git Switcher writes those files for you, and answers the one question the
+config never does out loud: **who am I right now?**
 
 ## What it does
 
 | | |
 | --- | --- |
-| **Manage profiles** | Add, edit, and delete accounts (`alias`, name, email, host, SSH host alias, key path, folders) through a form rather than by editing dotfiles. |
-| **Generate the config** | Writes an SSH `Host` stanza per profile and the git `includeIf` rules that map folders to identities. Every write is previewed as a diff first, is idempotent, and backs the original up to `.bak`. |
+| **Manage profiles** | Add, edit, and delete accounts (alias, name, email, host, SSH host alias, key path, folders) through a form instead of dotfiles. |
+| **Generate the config** | Writes an SSH `Host` stanza per profile plus the git `includeIf` rules mapping folders to identities. Every write is previewed as a diff, is idempotent, and backs up the original to `.bak`. |
 | **Set the global identity** | Pick which profile supplies the global `[user]` name and email — the fallback for every repo no folder rule covers. |
-| **See the active identity** | The menu bar shows the alias of the identity in effect, or a loud **Unregistered** when the current email matches no profile. |
-| **Generate SSH keys** | Creates an ed25519 keypair via `ssh-keygen`, then hands you the public key to register with the host. |
-| **Move to a new laptop** | Export every profile to one JSON file and import it on the new machine, then regenerate keys there. |
+| **See the active identity** | The menu bar shows the alias in effect, or a loud **Unregistered** when the current email matches no profile. |
+| **Generate SSH keys** | Creates an ed25519 keypair via `ssh-keygen` and hands you the public key to register with the host. |
+| **Move to a new laptop** | Export every profile to one JSON file, import it on the new machine, regenerate keys there. |
 
-### What it deliberately does not do
+## Requirements
 
-* **It does not replace `includeIf`.** Folder-based switching is git's job and
-  it already works. This app is a management and visibility layer on top — it
-  writes the rules, then gets out of the way.
-* **It never handles private key material.** It stores the *path* to a key and
-  delegates every crypto operation to `ssh-keygen` and the SSH agent. The app
-  never reads a private key, and an export can't contain one.
-* **No Keychain integration, no GPG signing, no cloud sync.** Portability is an
-  explicit export/import step, not a background service.
-* **macOS only.** The tray behaviour and `UseKeychain` in the generated SSH
-  config are macOS-specific.
+* macOS 10.15 or later (the tray behaviour and `UseKeychain` in the generated
+  SSH config are macOS-specific)
+* [Node.js](https://nodejs.org) 20.19+ or 22.12+
+* [Rust](https://rustup.rs) (stable) and Xcode Command Line Tools —
+  `xcode-select --install`
 
-## Getting started
+## Install
+
+There are no prebuilt releases yet; build it from source.
 
 ```sh
+git clone https://github.com/fachalik/git-switch.git
+cd git-switch
 npm install
-npm run tauri dev      # develop
-npm run tauri build    # produce Git Switcher.app + a .dmg
+
+npm run tauri dev      # run it in development
+npm run tauri build    # produce "Git Switcher.app" + a .dmg
 ```
 
-The build is unsigned and un-notarized. On first launch, right-click the app →
-**Open** to get past Gatekeeper.
+The bundle lands in `src-tauri/target/release/bundle/`. It is unsigned and
+un-notarized, so on first launch right-click the app → **Open** to get past
+Gatekeeper.
+
+## First run
+
+1. **Add a profile.** Give it an alias (`work`), your commit name and email,
+   and the host your repos live on (`github.com`, `gitlab.com`, …). The SSH
+   host alias defaults to `github.com-work` — that's the hostname you'll clone
+   through for this account.
+2. **Generate a key.** If the key path doesn't exist yet, the panel says
+   *Not generated yet* — press **Generate key**, then copy the public key and
+   add it to your account on the host (the `github.com keys` button opens the
+   right settings page).
+3. **Pick the folders.** Under *Use this identity in…*, choose the directories
+   this account owns — say `~/code/work`. Anything cloned under there commits
+   as this identity.
+4. **Choose a global identity.** Whichever profile should be the fallback for
+   every repo no folder rule covers. Leave it unmanaged and the app won't touch
+   your `[user]` section at all.
+5. **Review & apply.** The dialog shows the exact diff for every file it wants
+   to write. Nothing touches disk until you confirm.
+
+Then **Test connection** verifies the account authenticates, and **Watch a
+folder** points the menu bar at a directory so it reports the identity live.
+
+Clone through the host alias to use that profile's key:
+
+```sh
+git clone git@github.com-work:owner/repo.git
+```
 
 ## How it works
 
@@ -54,18 +100,14 @@ The build is unsigned and un-notarized. On first launch, right-click the app →
 | `~/.gitconfig` | **Shared**, same marker rule. Holds the global `[user]` identity (when you set one) followed by the `includeIf` lines. |
 | `~/.gitconfig-<alias>` | Owned by the app, regenerated wholesale. Deleting a profile removes its file on the next apply — but only if the file still carries the generated header, so a hand-written `~/.gitconfig-something` is never touched. |
 
-Nothing is written until you press **Review & apply**, and that dialog shows the
-exact diff for every file first. Each file is copied to `<name>.bak` before it
-is replaced — including on delete.
+Each file is copied to `<name>.bak` before it is replaced, including on delete.
 
 ### Switching identities
 
 Three layers, generated for you, from most general to most specific:
 
-0. **The global identity** — whichever profile you select under *Global
-   identity*. It applies to every repo that nothing more specific covers.
-   Leave it unmanaged and the app won't touch your `[user]` section at all.
-
+0. **The global identity** — the profile you select under *Global identity*.
+   It applies to every repo that nothing more specific covers.
 1. **By folder** — `includeIf "gitdir:~/code/work/"` points at
    `~/.gitconfig-work`, so every repo under that folder commits as that
    identity. Nested folders assigned to another profile still win, because
@@ -85,10 +127,10 @@ answer, and it wins.
 
 That same rule cuts the other way for config you wrote yourself. If your
 `~/.gitconfig` sets `user.email` *below* the managed block, your section wins
-and the global identity you picked in the app would quietly do nothing — so the
-apply dialog says so instead of letting you believe it worked. A `[user]`
-section *above* the block is fine: the app's comes later and takes precedence,
-and the dialog notes that too.
+and the global identity you picked would quietly do nothing — so the apply
+dialog says so instead of letting you believe it worked. A `[user]` section
+*above* the block is fine: the app's comes later and takes precedence, and the
+dialog notes that too.
 
 ### Knowing which identity is live
 
@@ -97,8 +139,8 @@ The app never guesses at git's config precedence — it asks git:
 `includeIf`, repo-local overrides, and everything else. The window also shows
 `--show-origin`, so you can see *which file* decided the answer.
 
-Pick a watched folder in the app and the menu bar tracks it (polled every 10
-seconds); with none picked it reports your global identity.
+Pick a watched folder and the menu bar tracks it (polled every 10 seconds);
+with none picked it reports your global identity.
 
 ## Security
 
@@ -122,7 +164,33 @@ seconds); with none picked it reports your global identity.
   would put it in the process list, visible to everything on the machine. Add
   one afterwards with `ssh-keygen -p -f <key>` if you want it.
 
-## Layout
+## What it deliberately does not do
+
+* **It does not replace `includeIf`.** Folder-based switching is git's job and
+  it already works. This app is a management and visibility layer on top — it
+  writes the rules, then gets out of the way.
+* **It never handles private key material.** It stores the *path* to a key and
+  delegates every crypto operation to `ssh-keygen` and the SSH agent.
+* **It does not pick a profile for you.** A repo's remote is *displayed* when
+  you watch a folder, because that's useful context, but auto-detecting an
+  identity from the remote URL is not built.
+* **No Keychain integration, no GPG signing, no cloud sync.** Portability is an
+  explicit export/import step, not a background service.
+* **No auto-updater.** Rebuild with `npm run tauri build` when you want a new
+  version. An updater needs a hosting endpoint and signing keys, which
+  reintroduces exactly the maintenance burden a local tool avoids.
+* **macOS only**, for now.
+
+## Development
+
+```sh
+npm install
+npm run tauri dev             # hot-reloading app
+npm run build                 # type-check + build the frontend
+cd src-tauri && cargo test    # Rust tests
+```
+
+### Layout
 
 ```
 src-tauri/src/
@@ -143,58 +211,44 @@ src-tauri/src/
 
 src/
   App.tsx       state and orchestration
-  lib/          typed invoke wrappers, shared types, diff
+  hooks/        overview, profile editor, key, apply, import/export
+  lib/          typed invoke wrappers, shared types, diff, formatting
   components/   status strip, sidebar, profile form, key panel, modals
+  components/ui shadcn/ui primitives
 ```
 
-## Tests
-
-```sh
-cd src-tauri && cargo test
-```
+### Tests
 
 The interesting one is
 [`tests/config_files.rs`](src-tauri/tests/config_files.rs): it runs the whole
-write path against a throwaway `$HOME` seeded with a pre-existing
-`~/.ssh/config` and `~/.gitconfig`, and asserts that the user's own content
-survives, that the preview matches what actually lands on disk, that applying
-twice is a no-op, that removing every profile restores the original file
-exactly, and that a crafted export can't inject config syntax.
+write path against a throwaway `$HOME` seeded with a pre-existing `~/.ssh/config`
+and `~/.gitconfig`, and asserts that the user's own content survives, that the
+preview matches what actually lands on disk, that applying twice is a no-op,
+that removing every profile restores the original file exactly, and that a
+crafted export can't inject config syntax.
 
-## Decisions worth knowing about
+## FAQ
 
-These differ from, or resolve, what the spec left open.
+**A profile saved with a missing SSH key — is that a bug?**
+No. Enforcing "key exists" at save time would make the built-in key generator
+unusable: you'd have to create the key before you could save the profile that
+says where it goes. The profile saves, and the key's status is shown next to it
+(**Not generated yet**, plus a warning in the sidebar) with a *Generate key*
+button right there. Permissions that are too open are flagged the same way,
+since ssh will refuse such a key.
 
-**Multi-host is supported.** Each profile has its own `host` (`github.com`,
-`gitlab.com`, `bitbucket.org`, a self-hosted GitLab…), so nothing is
-GitHub-specific. The *Open host keys* button knows where each of the three
-common hosts keeps its SSH key settings.
+**Does it work with GitLab, Bitbucket, or self-hosted?**
+Yes. Each profile has its own host, so nothing is GitHub-specific, and the
+`<host> keys` button knows where the three common hosts keep their SSH key
+settings.
 
-**Auto-detecting a profile from the remote URL is not built**, as specified.
-The repo's remote is *displayed* when you watch a folder, because it's useful
-context, but the app never picks a profile for you.
-
-**No auto-updater.** Rebuild with `npm run tauri build` when you want a new
-version. An updater would need a hosting endpoint and signing keys, which
-reintroduces exactly the maintenance burden a local tool is meant to avoid.
-
-**A missing SSH key is a warning, not a validation error.** The spec asked for
-"key path exists" validation, but enforcing it at save time makes the built-in
-key generator unusable — you'd have to create the key before you could save the
-profile that says where the key goes. Instead the profile saves, and the key's
-status is shown next to it (**Not generated yet**, plus a warning in the
-sidebar) with a *Generate key* button right there. Permissions that are too
-open are flagged the same way, since ssh will refuse such a key.
-
-**`ssh` is a third whitelisted binary.** The spec named `ssh-keygen` and `git`.
-*Test connection* runs `ssh -T git@<host-alias>` with a fixed argument list,
-which is what turns "I think this is set up" into "this account authenticates".
-It runs with `BatchMode=yes` so it can never block on a prompt, and
-`StrictHostKeyChecking=accept-new`, which trusts a host key on first contact —
-the standard trade-off for this check.
-
-**The menu bar tracks a folder you pick, not your terminal's folder.** An app
-can't see what directory another process is sitting in without something
-invasive like a shell hook. Choose a folder in the app (recent ones are kept
-one click away) and the menu bar follows it; with none chosen it reports your
+**Why doesn't the menu bar follow my terminal's directory?**
+An app can't see what directory another process is sitting in without something
+invasive like a shell hook. Choose a folder in the app (recent ones stay one
+click away) and the menu bar follows it; with none chosen it reports your
 global identity.
+
+**What does *Test connection* actually run?**
+`ssh -T git@<host-alias>` with a fixed argument list, `BatchMode=yes` so it can
+never block on a prompt, and `StrictHostKeyChecking=accept-new`, which trusts a
+host key on first contact — the standard trade-off for this check.
