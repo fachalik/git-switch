@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window. The app deliberately grants no filesystem or shell permission to the webview — every privileged operation goes through a Rust command, so the frontend can only ask for the operations that exist.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-confirm",
+    "clipboard-manager:allow-write-text",
+    "opener:allow-open-url"
+  ]
+}

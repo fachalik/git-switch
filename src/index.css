@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* Palette tokens. Light is the base; the dark block only re-points the same
+   roles, so every component can stay theme-agnostic. */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+    system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+
+  --color-canvas: #f6f6f7;
+  --color-surface: #ffffff;
+  --color-sunken: #f0f0f2;
+  --color-line: #e2e2e6;
+  --color-line-strong: #cfcfd6;
+  --color-ink: #16161a;
+  --color-ink-soft: #5c5c68;
+  --color-ink-faint: #8a8a96;
+  --color-accent: #3b5bdb;
+  --color-accent-soft: #e7ecfd;
+  --color-good: #1f7a4d;
+  --color-good-soft: #e3f5ec;
+  --color-warn: #9a5b00;
+  --color-warn-soft: #fdf0dc;
+  --color-bad: #b0243a;
+  --color-bad-soft: #fdeaed;
+}
+
+/* Dark appearance. `@theme` may not be nested in a media query, and it does
+   not need to be: every colour utility compiles to `var(--color-*)`, so
+   re-pointing the same variables on :root is enough. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #121216;
+    --color-surface: #1a1a20;
+    --color-sunken: #232329;
+    --color-line: #2e2e36;
+    --color-line-strong: #3d3d47;
+    --color-ink: #f0f0f3;
+    --color-ink-soft: #a7a7b4;
+    --color-ink-faint: #7a7a88;
+    --color-accent: #8ba4ff;
+    --color-accent-soft: #232a45;
+    --color-good: #5fd19a;
+    --color-good-soft: #16301f;
+    --color-warn: #e8b464;
+    --color-warn-soft: #33260f;
+    --color-bad: #ff8497;
+    --color-bad-soft: #38161d;
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  /* A config tool is not a web page: no rubber-band scroll, no text selection
+     on chrome, no drag-to-open of dropped files. */
+  overscroll-behavior: none;
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
