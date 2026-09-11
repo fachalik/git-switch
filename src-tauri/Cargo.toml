@@ -1,6 +1,6 @@
 [package]
 name = "gitswitcher"
-version = "0.1.0"
+version = "0.2.0"
 description = "Manage and see your git identities"
 authors = ["FA Chalik"]
 edition = "2021"
