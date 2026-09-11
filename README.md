@@ -12,6 +12,8 @@ commit would actually use right now.
 Local-only: no accounts, no network calls, no telemetry. Built with Tauri v2
 (Rust) + React + TypeScript + Tailwind + shadcn/ui.
 
+![The Git Switcher window: three profiles listed on the left, the watched folder and the selected profile's identity and SSH settings on the right](public/img/01-profiles.png)
+
 ---
 
 ## The problem
@@ -103,6 +105,14 @@ git clone git@github.com-work:owner/repo.git
 Each file is copied to `<name>.bak` before it is replaced, including on delete.
 
 ### Switching identities
+
+The global identity is set from the header, and everything downstream re-reads
+immediately — here the watched folder goes from *matches personal* to *matches
+acme* as soon as the new profile is picked:
+
+| Picking a profile | Applied |
+| --- | --- |
+| ![The global identity dropdown open, listing the personal, acme, and northwind profiles](public/img/02-switch.png) | ![The same window with acme now the active global identity and the watched folder reporting it](public/img/03-applied.png) |
 
 Three layers, generated for you, from most general to most specific:
 
