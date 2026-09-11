@@ -1,5 +1,18 @@
 //! The IPC surface. Every command is thin: validate, delegate, persist,
 //! refresh the tray. All the real logic lives in the modules below it.
+//!
+//! Every command carries `#[tauri::command(async)]`, and must keep it. A plain
+//! `#[tauri::command]` on a non-async fn runs on the main thread — the same
+//! thread that drives the webview — so the window cannot repaint until the
+//! command returns. Every command here either shells out (`git`, `ssh`,
+//! `ssh-keygen`) or touches the filesystem, and `test_ssh` waits on a network
+//! round-trip of up to `ConnectTimeout=10`. On the main thread that reads as a
+//! frozen app: a spinner in the UI could not even animate.
+//!
+//! Running off the main thread is already the norm here — the tray poller in
+//! `tray.rs` calls `store::load` and `status::snapshot` from its own thread —
+//! and `store::save` writes through an atomic rename, so a reader sees either
+//! the old file or the new one, never a torn one.
 
 use crate::apply;
 use crate::error::{AppError, Result};
@@ -65,7 +78,7 @@ fn overview(store: &Store) -> Result<Overview> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_overview() -> Result<Overview> {
     overview(&store::load()?)
 }
@@ -93,7 +106,7 @@ fn ensure_unique(store: &Store, alias: &str, host_alias: &str, skip_id: Option<&
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_profile(app: AppHandle, input: ProfileInput) -> Result<Overview> {
     let mut store = store::load()?;
     let clean = input.clean()?;
@@ -117,7 +130,7 @@ pub fn create_profile(app: AppHandle, input: ProfileInput) -> Result<Overview> {
     overview(&store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_profile(app: AppHandle, id: String, input: ProfileInput) -> Result<Overview> {
     let mut store = store::load()?;
     let clean = input.clean()?;
@@ -148,7 +161,7 @@ pub fn update_profile(app: AppHandle, id: String, input: ProfileInput) -> Result
     overview(&store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_profile(app: AppHandle, id: String) -> Result<Overview> {
     let mut store = store::load()?;
     let before = store.profiles.len();
@@ -168,13 +181,13 @@ pub fn delete_profile(app: AppHandle, id: String) -> Result<Overview> {
     overview(&store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_apply() -> Result<apply::Plan> {
     let store = store::load()?;
     apply::preview(&store.profiles, global_profile(&store))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn apply_config(app: AppHandle) -> Result<apply::ApplyReport> {
     let store = store::load()?;
     let report = apply::apply(&store.profiles, global_profile(&store))?;
@@ -188,7 +201,7 @@ pub fn apply_config(app: AppHandle) -> Result<apply::ApplyReport> {
 ///
 /// Like every other change, this only records the intent; nothing reaches disk
 /// until the user reviews and applies.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_global_profile(app: AppHandle, id: Option<String>) -> Result<Overview> {
     let mut store = store::load()?;
 
@@ -203,19 +216,19 @@ pub fn set_global_profile(app: AppHandle, id: Option<String>) -> Result<Overview
     overview(&store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn generate_key(id: String, overwrite: bool) -> Result<GeneratedKey> {
     let store = store::load()?;
     keygen::generate(store.find(&id)?, overwrite)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn test_ssh(id: String) -> Result<SshTest> {
     let store = store::load()?;
     keygen::test_connection(&store.find(&id)?.host_alias)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_watched_dir(app: AppHandle, dir: Option<String>) -> Result<Overview> {
     let mut store = store::load()?;
 
@@ -242,22 +255,22 @@ pub fn set_watched_dir(app: AppHandle, dir: Option<String>) -> Result<Overview> 
     overview(&store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_status() -> Result<Snapshot> {
     status::snapshot(&store::load()?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_profiles(path: String) -> Result<String> {
     portable::export(&store::load()?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_import(path: String) -> Result<ImportPreview> {
     portable::preview(&store::load()?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_profiles(app: AppHandle, path: String, overwrite: bool) -> Result<ImportReport> {
     let mut store = store::load()?;
     let report = portable::import(&mut store, &path, overwrite)?;

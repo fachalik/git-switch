@@ -5,8 +5,8 @@ It manages the config files you would otherwise edit by hand — `~/.ssh/config`
 `~/.gitconfig`, and one `~/.gitconfig-<alias>` per account — and shows in the
 menu bar which identity a commit would actually use.
 
-Built with Tauri v2 (Rust) + React + TypeScript + Tailwind. No accounts, no
-network calls, no telemetry.
+Built with Tauri v2 (Rust) + React + TypeScript + Tailwind + shadcn/ui. No
+accounts, no network calls, no telemetry.
 
 ## What it does
 

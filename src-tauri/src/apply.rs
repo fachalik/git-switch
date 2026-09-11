@@ -7,7 +7,7 @@
 use crate::error::{IoCtx, Result};
 use crate::fsx;
 use crate::gitcfg;
-use crate::model::Profile;
+use crate::model::{validate_alias, Profile};
 use crate::paths;
 use crate::sshcfg;
 use serde::Serialize;
@@ -97,7 +97,19 @@ fn orphan_includes(profiles: &[Profile]) -> Result<Vec<PathBuf>> {
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with(".gitconfig-") || live.contains(&name) {
+        let Some(suffix) = name.strip_prefix(".gitconfig-") else {
+            continue;
+        };
+        // The suffix has to be a name we could actually have generated, not
+        // merely start the right way. `validate_alias` rejects anything holding
+        // a dot, which is what keeps our own `.gitconfig-work.bak` from being
+        // mistaken for an orphan — it carries our header, so the content check
+        // below waves it straight through. Deleting it backed it up again to
+        // `.bak.bak`, and every later apply added one more level.
+        if !validate_alias(suffix).is_ok_and(|valid| valid == suffix) {
+            continue;
+        }
+        if live.contains(&name) {
             continue;
         }
         let path = entry.path();
@@ -174,7 +186,7 @@ fn build(profiles: &[Profile], global: Option<&Profile>) -> Result<FullPlan> {
     for profile in profiles {
         let path = paths::include_path(&profile.alias)?;
         let before = fsx::read_or_empty(&path)?;
-        let after = gitcfg::render_include_file(profile);
+        let after = gitcfg::render_include_file(profile)?;
         changes.push(change(
             &path,
             &format!("Identity for \"{}\"", profile.alias),

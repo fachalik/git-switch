@@ -1,92 +1,156 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* Palette tokens. Light is the base; the dark block only re-points the same
-   roles, so every component can stay theme-agnostic. */
-@theme {
+@custom-variant dark (&:is(.dark *));
+
+/* The shadcn token set. Every component reads these roles, so the palette can
+   change in one place without touching a single component. */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.002 260);
+  --foreground: oklch(0.21 0.01 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 265);
+  --primary: oklch(0.51 0.19 265);
+  --primary-foreground: oklch(0.985 0.002 260);
+  --secondary: oklch(0.968 0.004 265);
+  --secondary-foreground: oklch(0.21 0.01 265);
+  --muted: oklch(0.968 0.004 265);
+  --muted-foreground: oklch(0.55 0.02 265);
+  --accent: oklch(0.955 0.012 265);
+  --accent-foreground: oklch(0.21 0.01 265);
+  --destructive: oklch(0.58 0.21 15);
+  --destructive-foreground: oklch(0.985 0.002 260);
+  --border: oklch(0.922 0.005 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.51 0.19 265);
+
+  /* App-level roles shadcn doesn't ship: the status vocabulary this tool needs
+     to say "registered", "not set", "out of date". */
+  --success: oklch(0.53 0.13 155);
+  --success-foreground: oklch(0.985 0.002 260);
+  --success-muted: oklch(0.955 0.035 155);
+  --warning: oklch(0.58 0.12 70);
+  --warning-foreground: oklch(0.985 0.002 260);
+  --warning-muted: oklch(0.96 0.05 85);
+  --destructive-muted: oklch(0.96 0.025 15);
+}
+
+.dark {
+  --background: oklch(0.17 0.008 265);
+  --foreground: oklch(0.965 0.003 265);
+  --card: oklch(0.21 0.01 265);
+  --card-foreground: oklch(0.965 0.003 265);
+  --popover: oklch(0.23 0.011 265);
+  --popover-foreground: oklch(0.965 0.003 265);
+  --primary: oklch(0.75 0.13 265);
+  --primary-foreground: oklch(0.19 0.02 265);
+  --secondary: oklch(0.26 0.012 265);
+  --secondary-foreground: oklch(0.965 0.003 265);
+  --muted: oklch(0.26 0.012 265);
+  --muted-foreground: oklch(0.7 0.015 265);
+  --accent: oklch(0.29 0.014 265);
+  --accent-foreground: oklch(0.965 0.003 265);
+  --destructive: oklch(0.7 0.17 15);
+  --destructive-foreground: oklch(0.19 0.02 265);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.75 0.13 265);
+
+  --success: oklch(0.76 0.14 158);
+  --success-foreground: oklch(0.19 0.02 265);
+  --success-muted: oklch(0.3 0.055 158);
+  --warning: oklch(0.8 0.12 80);
+  --warning-foreground: oklch(0.19 0.02 265);
+  --warning-muted: oklch(0.32 0.06 80);
+  --destructive-muted: oklch(0.31 0.07 15);
+}
+
+@theme inline {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
     system-ui, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
 
-  --color-canvas: #f6f6f7;
-  --color-surface: #ffffff;
-  --color-sunken: #f0f0f2;
-  --color-line: #e2e2e6;
-  --color-line-strong: #cfcfd6;
-  --color-ink: #16161a;
-  --color-ink-soft: #5c5c68;
-  --color-ink-faint: #8a8a96;
-  --color-accent: #3b5bdb;
-  --color-accent-soft: #e7ecfd;
-  --color-good: #1f7a4d;
-  --color-good-soft: #e3f5ec;
-  --color-warn: #9a5b00;
-  --color-warn-soft: #fdf0dc;
-  --color-bad: #b0243a;
-  --color-bad-soft: #fdeaed;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Dark appearance. `@theme` may not be nested in a media query, and it does
-   not need to be: every colour utility compiles to `var(--color-*)`, so
-   re-pointing the same variables on :root is enough. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #121216;
-    --color-surface: #1a1a20;
-    --color-sunken: #232329;
-    --color-line: #2e2e36;
-    --color-line-strong: #3d3d47;
-    --color-ink: #f0f0f3;
-    --color-ink-soft: #a7a7b4;
-    --color-ink-faint: #7a7a88;
-    --color-accent: #8ba4ff;
-    --color-accent-soft: #232a45;
-    --color-good: #5fd19a;
-    --color-good-soft: #16301f;
-    --color-warn: #e8b464;
-    --color-warn-soft: #33260f;
-    --color-bad: #ff8497;
-    --color-bad-soft: #38161d;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
 
-html {
-  color-scheme: light dark;
-}
+  html {
+    /* shadcn is sized in rem against a 16px root, which reads oversized in a
+       desktop utility window. Shrinking the root scales type and spacing
+       together, so `text-sm` lands on the 13px this app is designed around. */
+    font-size: 15px;
+    color-scheme: light dark;
+  }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
-  /* A config tool is not a web page: no rubber-band scroll, no text selection
-     on chrome, no drag-to-open of dropped files. */
-  overscroll-behavior: none;
-  cursor: default;
-}
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+    /* A config tool is not a web page: no rubber-band scroll, no text selection
+       on chrome, no drag-to-open of dropped files. */
+    overscroll-behavior: none;
+    cursor: default;
+  }
 
-input,
-textarea {
-  user-select: text;
-}
+  input,
+  textarea {
+    user-select: text;
+  }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-line-strong);
-  border: 3px solid transparent;
-  background-clip: content-box;
-  border-radius: 999px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--input);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
