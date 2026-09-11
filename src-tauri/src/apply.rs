@@ -30,9 +30,19 @@ pub struct FileChange {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlanNote {
+    /// "info" | "warn"
+    pub level: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Plan {
     pub changes: Vec<FileChange>,
     pub has_changes: bool,
+    /// Things worth saying before the user commits to the write.
+    pub notes: Vec<PlanNote>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -53,6 +63,7 @@ struct FullPlan {
     changes: Vec<FileChange>,
     writes: Vec<PlannedWrite>,
     removals: Vec<PathBuf>,
+    notes: Vec<PlanNote>,
 }
 
 fn change(path: &Path, label: &str, before: String, after: String) -> FileChange {
@@ -103,9 +114,10 @@ fn orphan_includes(profiles: &[Profile]) -> Result<Vec<PathBuf>> {
     Ok(orphans)
 }
 
-fn build(profiles: &[Profile]) -> Result<FullPlan> {
+fn build(profiles: &[Profile], global: Option<&Profile>) -> Result<FullPlan> {
     let mut changes = Vec::new();
     let mut writes = Vec::new();
+    let mut notes = Vec::new();
 
     let (ssh_path, ssh_before, ssh_after) = sshcfg::render_file(profiles)?;
     changes.push(change(
@@ -122,7 +134,29 @@ fn build(profiles: &[Profile]) -> Result<FullPlan> {
         });
     }
 
-    let (git_path, git_before, git_after) = gitcfg::render_file(profiles)?;
+    let (git_path, git_before, git_after) = gitcfg::render_file(profiles, global)?;
+
+    if let Some(profile) = global {
+        // Git takes the last assignment wins, so where the user's own [user]
+        // section sits decides whether our global identity actually applies.
+        match gitcfg::locate_user_section(&git_before) {
+            gitcfg::UserSection::AfterBlock => notes.push(PlanNote {
+                level: "warn".to_string(),
+                message: format!(
+                    "Your ~/.gitconfig sets user.name/user.email below the managed block, so that section wins and \"{}\" will not take effect globally. Move it above the block, or remove it.",
+                    profile.alias
+                ),
+            }),
+            gitcfg::UserSection::BeforeBlock => notes.push(PlanNote {
+                level: "info".to_string(),
+                message: format!(
+                    "Your ~/.gitconfig already has its own [user] section. It stays in the file, but \"{}\" is written after it and so takes precedence.",
+                    profile.alias
+                ),
+            }),
+            gitcfg::UserSection::None => {}
+        }
+    }
     changes.push(change(
         &git_path,
         "Global git config (includeIf)",
@@ -174,20 +208,22 @@ fn build(profiles: &[Profile]) -> Result<FullPlan> {
         changes,
         writes,
         removals,
+        notes,
     })
 }
 
-pub fn preview(profiles: &[Profile]) -> Result<Plan> {
-    let plan = build(profiles)?;
+pub fn preview(profiles: &[Profile], global: Option<&Profile>) -> Result<Plan> {
+    let plan = build(profiles, global)?;
     let has_changes = plan.changes.iter().any(|c| c.changed);
     Ok(Plan {
         changes: plan.changes,
         has_changes,
+        notes: plan.notes,
     })
 }
 
-pub fn apply(profiles: &[Profile]) -> Result<ApplyReport> {
-    let plan = build(profiles)?;
+pub fn apply(profiles: &[Profile], global: Option<&Profile>) -> Result<ApplyReport> {
+    let plan = build(profiles, global)?;
     let mut report = ApplyReport {
         written: Vec::new(),
         removed: Vec::new(),

@@ -45,6 +45,7 @@ pub fn run() {
             commands::generate_key,
             commands::test_ssh,
             commands::set_watched_dir,
+            commands::set_global_profile,
             commands::get_status,
             commands::export_profiles,
             commands::preview_import,

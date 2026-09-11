@@ -14,6 +14,7 @@ network calls, no telemetry.
 | --- | --- |
 | **Manage profiles** | Add, edit, and delete accounts (`alias`, name, email, host, SSH host alias, key path, folders) through a form rather than by editing dotfiles. |
 | **Generate the config** | Writes an SSH `Host` stanza per profile and the git `includeIf` rules that map folders to identities. Every write is previewed as a diff first, is idempotent, and backs the original up to `.bak`. |
+| **Set the global identity** | Pick which profile supplies the global `[user]` name and email — the fallback for every repo no folder rule covers. |
 | **See the active identity** | The menu bar shows the alias of the identity in effect, or a loud **Unregistered** when the current email matches no profile. |
 | **Generate SSH keys** | Creates an ed25519 keypair via `ssh-keygen`, then hands you the public key to register with the host. |
 | **Move to a new laptop** | Export every profile to one JSON file and import it on the new machine, then regenerate keys there. |
@@ -50,7 +51,7 @@ The build is unsigned and un-notarized. On first launch, right-click the app →
 | --- | --- |
 | `~/.config/gitswitcher/profiles.json` | Owned by the app. The only state it keeps. |
 | `~/.ssh/config` | **Shared.** Only the block between the `# >>> gitswitcher managed block >>>` markers is rewritten; everything else is left byte-for-byte alone. |
-| `~/.gitconfig` | **Shared**, same marker rule. Holds only the `includeIf` lines. |
+| `~/.gitconfig` | **Shared**, same marker rule. Holds the global `[user]` identity (when you set one) followed by the `includeIf` lines. |
 | `~/.gitconfig-<alias>` | Owned by the app, regenerated wholesale. Deleting a profile removes its file on the next apply — but only if the file still carries the generated header, so a hand-written `~/.gitconfig-something` is never touched. |
 
 Nothing is written until you press **Review & apply**, and that dialog shows the
@@ -59,7 +60,11 @@ is replaced — including on delete.
 
 ### Switching identities
 
-Two independent mechanisms, both generated for you:
+Three layers, generated for you, from most general to most specific:
+
+0. **The global identity** — whichever profile you select under *Global
+   identity*. It applies to every repo that nothing more specific covers.
+   Leave it unmanaged and the app won't touch your `[user]` section at all.
 
 1. **By folder** — `includeIf "gitdir:~/code/work/"` points at
    `~/.gitconfig-work`, so every repo under that folder commits as that
@@ -72,6 +77,18 @@ Two independent mechanisms, both generated for you:
 
 Each generated `~/.gitconfig-<alias>` also sets `core.sshCommand`, so a folder
 rule works even for repos cloned with a plain `github.com` URL.
+
+The ordering inside the managed block is load-bearing: the global `[user]`
+section is written **before** the `includeIf` lines, because git takes the last
+assignment that matches. Global is the fallback; a folder rule is the specific
+answer, and it wins.
+
+That same rule cuts the other way for config you wrote yourself. If your
+`~/.gitconfig` sets `user.email` *below* the managed block, your section wins
+and the global identity you picked in the app would quietly do nothing — so the
+apply dialog says so instead of letting you believe it worked. A `[user]`
+section *above* the block is fine: the app's comes later and takes precedence,
+and the dialog notes that too.
 
 ### Knowing which identity is live
 

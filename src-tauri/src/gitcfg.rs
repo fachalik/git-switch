@@ -45,12 +45,35 @@ fn gitdir_pattern(dir: &str) -> String {
     }
 }
 
-/// The `includeIf` block for `~/.gitconfig`.
+/// The managed block for `~/.gitconfig`.
 ///
-/// Git applies includes in file order and the last assignment wins, so shorter
-/// (less specific) paths are emitted first: `~/code/` then `~/code/client-x/`
-/// means the nested folder overrides its parent, which is what people expect.
-pub fn render_block(profiles: &[Profile]) -> String {
+/// Two parts, and the order between them is load-bearing. The global `[user]`
+/// identity comes first so the `includeIf` lines that follow can override it:
+/// global is the fallback, a folder rule is the specific answer.
+///
+/// Within the includes, git applies them in file order and the last assignment
+/// wins, so shorter (less specific) paths are emitted first: `~/code/` then
+/// `~/code/client-x/` means the nested folder overrides its parent, which is
+/// what people expect.
+pub fn render_block(profiles: &[Profile], global: Option<&Profile>) -> String {
+    let mut out = String::new();
+
+    if let Some(profile) = global {
+        out.push_str(&format!(
+            "# Global identity — profile \"{}\". Folder rules below override it.\n",
+            profile.alias
+        ));
+        out.push_str("[user]\n");
+        out.push_str(&format!("\tname = {}\n", fsx::git_quote(&profile.name)));
+        out.push_str(&format!("\temail = {}\n", fsx::git_quote(&profile.email)));
+        out.push('\n');
+    }
+
+    out.push_str(&render_includes(profiles));
+    out
+}
+
+fn render_includes(profiles: &[Profile]) -> String {
     let mut entries: Vec<(String, String)> = Vec::new();
     for profile in profiles {
         for dir in &profile.dirs {
@@ -68,11 +91,81 @@ pub fn render_block(profiles: &[Profile]) -> String {
 }
 
 /// The full `~/.gitconfig` we would write, given what's on disk right now.
-pub fn render_file(profiles: &[Profile]) -> Result<(PathBuf, String, String)> {
+pub fn render_file(
+    profiles: &[Profile],
+    global: Option<&Profile>,
+) -> Result<(PathBuf, String, String)> {
     let path = paths::gitconfig_path()?;
     let before = fsx::read_or_empty(&path)?;
-    let after = fsx::upsert_block(&before, &render_block(profiles));
+    let after = fsx::upsert_block(&before, &render_block(profiles, global));
     Ok((path, before, after))
+}
+
+/// Does a `[user]` section set `name` or `email` somewhere in `content`?
+fn sets_user_identity(content: &str) -> bool {
+    let mut in_user = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            let lower = trimmed.to_ascii_lowercase();
+            in_user = lower.starts_with("[user]") || lower.starts_with("[user ");
+            continue;
+        }
+        if in_user {
+            let key = trimmed
+                .split('=')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if key == "name" || key == "email" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Where the user's own `[user]` section sits relative to our managed block.
+///
+/// Git takes the last assignment in the file, so a `[user]` section *after*
+/// the block silently beats the global identity we write — worth saying out
+/// loud rather than letting the setting appear to do nothing.
+#[derive(Debug, PartialEq, Eq)]
+pub enum UserSection {
+    None,
+    BeforeBlock,
+    AfterBlock,
+}
+
+pub fn locate_user_section(content: &str) -> UserSection {
+    let lines: Vec<&str> = content.lines().collect();
+    let end = lines.iter().position(|l| l.trim() == fsx::END);
+    let begin = lines.iter().position(|l| l.trim() == fsx::BEGIN);
+
+    match (begin, end) {
+        (Some(begin), Some(end)) if begin <= end => {
+            let after = lines[end + 1..].join("\n");
+            if sets_user_identity(&after) {
+                return UserSection::AfterBlock;
+            }
+            let before = lines[..begin].join("\n");
+            if sets_user_identity(&before) {
+                UserSection::BeforeBlock
+            } else {
+                UserSection::None
+            }
+        }
+        // No managed block yet: ours will be appended at the end, so anything
+        // already in the file ends up before it.
+        _ => {
+            if sets_user_identity(content) {
+                UserSection::BeforeBlock
+            } else {
+                UserSection::None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -97,7 +190,7 @@ mod tests {
 
     #[test]
     fn gitdir_patterns_get_a_trailing_slash() {
-        let block = render_block(&[profile("work", &["~/code/work"])]);
+        let block = render_block(&[profile("work", &["~/code/work"])], None);
         assert!(block.contains(r#"[includeIf "gitdir:~/code/work/"]"#));
         assert!(block.contains("path = ~/.gitconfig-work"));
     }
@@ -106,10 +199,13 @@ mod tests {
     fn nested_folders_are_emitted_after_their_parents() {
         // Git applies includes in order and the last write wins, so the more
         // specific folder has to come second to override the broader one.
-        let block = render_block(&[
-            profile("client", &["~/code/work/client-x"]),
-            profile("work", &["~/code/work"]),
-        ]);
+        let block = render_block(
+            &[
+                profile("client", &["~/code/work/client-x"]),
+                profile("work", &["~/code/work"]),
+            ],
+            None,
+        );
         let parent = block.find("gitdir:~/code/work/\"").unwrap();
         let child = block.find("gitdir:~/code/work/client-x/").unwrap();
         assert!(parent < child, "parent folder must be listed first");
@@ -127,6 +223,65 @@ mod tests {
 
     #[test]
     fn profiles_without_folders_produce_no_includes() {
-        assert_eq!(render_block(&[profile("work", &[])]), "");
+        assert_eq!(render_block(&[profile("work", &[])], None), "");
+    }
+
+    #[test]
+    fn global_identity_is_written_before_the_includes() {
+        let work = profile("work", &["~/code/work"]);
+        let block = render_block(std::slice::from_ref(&work), Some(&work));
+
+        let user = block.find("[user]").expect("global [user] section");
+        let include = block.find("[includeIf").expect("include lines");
+        assert!(
+            user < include,
+            "global identity must come first so folder rules can override it"
+        );
+        assert!(block.contains(r#"email = "work@example.com""#));
+    }
+
+    #[test]
+    fn no_global_profile_means_no_user_section() {
+        let block = render_block(&[profile("work", &["~/code/work"])], None);
+        assert!(!block.contains("[user]"));
+        assert!(block.contains("[includeIf"));
+    }
+
+    #[test]
+    fn locates_a_user_section_relative_to_the_block() {
+        assert_eq!(locate_user_section(""), UserSection::None);
+        assert_eq!(
+            locate_user_section("[http]\n\tpostBuffer = 1\n"),
+            UserSection::None
+        );
+
+        // No block yet: ours gets appended, so existing config lands before it.
+        assert_eq!(
+            locate_user_section("[user]\n\temail = me@example.com\n"),
+            UserSection::BeforeBlock
+        );
+
+        let with_block = format!(
+            "[user]\n\temail = me@example.com\n\n{}\nbody\n{}\n",
+            fsx::BEGIN,
+            fsx::END
+        );
+        assert_eq!(locate_user_section(&with_block), UserSection::BeforeBlock);
+
+        // The hazard: git takes the last assignment, so this one wins over ours.
+        let shadowed = format!(
+            "{}\nbody\n{}\n[user]\n\temail = me@example.com\n",
+            fsx::BEGIN,
+            fsx::END
+        );
+        assert_eq!(locate_user_section(&shadowed), UserSection::AfterBlock);
+
+        // A [user] section that sets neither name nor email shadows nothing.
+        let harmless = format!(
+            "{}\nbody\n{}\n[user]\n\tsigningkey = ABC\n",
+            fsx::BEGIN,
+            fsx::END
+        );
+        assert_eq!(locate_user_section(&harmless), UserSection::None);
     }
 }

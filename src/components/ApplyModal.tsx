@@ -149,6 +149,19 @@ export function ApplyModal({
               you deleted. Applying removes them (a .bak copy is kept).
             </p>
           ) : null}
+          {plan.notes.map((note, index) => (
+            <p
+              key={index}
+              className={`rounded-md border px-3 py-2 text-[11px] leading-snug ${
+                note.level === "warn"
+                  ? "border-warn/40 bg-warn-soft text-warn"
+                  : "border-line bg-sunken text-ink-soft"
+              }`}
+            >
+              {note.message}
+            </p>
+          ))}
+
           <ul className="flex flex-col gap-2">
             {changed.map((change) => (
               <ChangeRow key={change.path} change={change} />

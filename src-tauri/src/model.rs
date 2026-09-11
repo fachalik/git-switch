@@ -57,6 +57,11 @@ pub struct Settings {
     pub watched_dir: Option<String>,
     #[serde(default)]
     pub recent_dirs: Vec<String>,
+    /// Profile used as the global `[user]` identity — the fallback for every
+    /// repo that no `includeIf` folder rule covers. `None` leaves whatever is
+    /// already in `~/.gitconfig` alone.
+    #[serde(default)]
+    pub global_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +298,32 @@ mod tests {
         assert!(validate_host("host", "github.com-work").is_ok());
         assert!(validate_host("host", "git hub.com").is_err());
         assert!(validate_host("host", "github.com\n  User root").is_err());
+    }
+
+    #[test]
+    fn a_store_written_before_the_global_setting_existed_still_loads() {
+        // Exactly the shape v0.1.0 wrote: no globalProfileId anywhere.
+        let raw = r#"{
+            "version": 1,
+            "profiles": [{
+                "id": "abc",
+                "alias": "personal",
+                "name": "Me",
+                "email": "me@example.com",
+                "hostName": "github.com",
+                "hostAlias": "gh-personal",
+                "sshKeyPath": "~/.ssh/id_ed25519_personal",
+                "dirs": ["~/code"],
+                "createdAt": "2026-09-11T00:00:00Z",
+                "updatedAt": "2026-09-11T00:00:00Z"
+            }],
+            "settings": { "watchedDir": "~/code", "recentDirs": ["~/code"] }
+        }"#;
+
+        let store: Store = serde_json::from_str(raw).expect("old stores must keep loading");
+        assert_eq!(store.profiles.len(), 1);
+        assert_eq!(store.settings.watched_dir.as_deref(), Some("~/code"));
+        assert_eq!(store.settings.global_profile_id, None);
     }
 
     #[test]

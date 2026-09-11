@@ -6,6 +6,7 @@ export function Sidebar({
   health,
   status,
   selectedId,
+  globalProfileId,
   creating,
   onSelect,
   onCreate,
@@ -17,6 +18,7 @@ export function Sidebar({
   health: KeyHealth[];
   status: Snapshot;
   selectedId: string | null;
+  globalProfileId: string | null;
   creating: boolean;
   onSelect: (id: string) => void;
   onCreate: () => void;
@@ -72,6 +74,9 @@ export function Sidebar({
                       {profile.alias}
                     </span>
                     {active ? <Badge tone="good">active</Badge> : null}
+                    {profile.id === globalProfileId ? (
+                      <Badge tone="accent">global</Badge>
+                    ) : null}
                     {keyHealth && !keyHealth.privateKeyExists ? (
                       <Badge tone="warn">no key</Badge>
                     ) : null}

@@ -199,6 +199,19 @@ export default function App() {
     if (next) setOverview(next);
   }
 
+  async function setGlobalProfile(id: string | null) {
+    const next = await guard(() => api.setGlobalProfile(id));
+    if (!next) return;
+    setOverview(next);
+
+    const alias = next.profiles.find((profile) => profile.id === id)?.alias;
+    notify(
+      alias
+        ? `"${alias}" will become your global identity — apply to write it.`
+        : "Global identity left unmanaged — apply to remove it from ~/.gitconfig.",
+    );
+  }
+
   async function exportProfiles() {
     const path = await save({
       title: "Export profiles",
@@ -285,7 +298,9 @@ export default function App() {
       <StatusStrip
         status={overview.status}
         settings={overview.settings}
+        profiles={profiles}
         onWatchDir={watchDir}
+        onSetGlobal={setGlobalProfile}
         onRefresh={() => void refresh()}
         busy={busy}
       />
@@ -296,6 +311,7 @@ export default function App() {
           health={overview.health}
           status={overview.status}
           selectedId={selectedId}
+          globalProfileId={overview.settings.globalProfileId}
           creating={creating}
           onSelect={(id) => {
             setCreating(false);

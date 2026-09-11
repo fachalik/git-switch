@@ -40,6 +40,12 @@ fn locations() -> Result<Locations> {
     })
 }
 
+/// The profile designated as the global identity, if it still exists.
+fn global_profile(store: &Store) -> Option<&Profile> {
+    let id = store.settings.global_profile_id.as_deref()?;
+    store.profiles.iter().find(|p| p.id == id)
+}
+
 /// One round trip for everything the window renders. Cheaper than five
 /// separate calls and guarantees the pieces are consistent with each other.
 fn overview(store: &Store) -> Result<Overview> {
@@ -54,7 +60,7 @@ fn overview(store: &Store) -> Result<Overview> {
         settings: store.settings.clone(),
         health,
         status: status::snapshot(store)?,
-        plan: apply::preview(&store.profiles)?,
+        plan: apply::preview(&store.profiles, global_profile(store))?,
         locations: locations()?,
     })
 }
@@ -151,6 +157,10 @@ pub fn delete_profile(app: AppHandle, id: String) -> Result<Overview> {
         return Err(AppError::not_found(format!("no profile with id {id}")));
     }
 
+    if store.settings.global_profile_id.as_deref() == Some(id.as_str()) {
+        store.settings.global_profile_id = None;
+    }
+
     // The generated files stay until the next apply, which is where the user
     // gets to see the removal before it happens.
     store::save(&store)?;
@@ -160,15 +170,37 @@ pub fn delete_profile(app: AppHandle, id: String) -> Result<Overview> {
 
 #[tauri::command]
 pub fn preview_apply() -> Result<apply::Plan> {
-    apply::preview(&store::load()?.profiles)
+    let store = store::load()?;
+    apply::preview(&store.profiles, global_profile(&store))
 }
 
 #[tauri::command]
 pub fn apply_config(app: AppHandle) -> Result<apply::ApplyReport> {
     let store = store::load()?;
-    let report = apply::apply(&store.profiles)?;
+    let report = apply::apply(&store.profiles, global_profile(&store))?;
     tray::refresh(&app);
     Ok(report)
+}
+
+/// Choose which profile supplies the global `[user]` identity — the fallback
+/// for every repo no folder rule covers. `None` stops managing it and leaves
+/// whatever is already in `~/.gitconfig`.
+///
+/// Like every other change, this only records the intent; nothing reaches disk
+/// until the user reviews and applies.
+#[tauri::command]
+pub fn set_global_profile(app: AppHandle, id: Option<String>) -> Result<Overview> {
+    let mut store = store::load()?;
+
+    if let Some(id) = &id {
+        // Fail loudly rather than silently storing a dangling id.
+        store.find(id)?;
+    }
+    store.settings.global_profile_id = id;
+
+    store::save(&store)?;
+    tray::refresh(&app);
+    overview(&store)
 }
 
 #[tauri::command]

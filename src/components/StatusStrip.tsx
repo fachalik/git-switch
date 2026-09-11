@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import type { Identity, Settings, Snapshot } from "../lib/types";
+import type { Identity, Profile, Settings, Snapshot } from "../lib/types";
 import { Badge, Button } from "./ui";
 
 const STATE_TONE = {
@@ -25,11 +25,13 @@ function IdentityCard({
   title,
   caption,
   action,
+  footer,
 }: {
   identity: Identity | null;
   title: string;
   caption?: string;
   action?: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-lg border border-line bg-surface p-3">
@@ -127,6 +129,8 @@ function IdentityCard({
           ) : null}
         </>
       )}
+
+      {footer}
     </div>
   );
 }
@@ -134,16 +138,29 @@ function IdentityCard({
 export function StatusStrip({
   status,
   settings,
+  profiles,
   onWatchDir,
+  onSetGlobal,
   onRefresh,
   busy,
 }: {
   status: Snapshot;
   settings: Settings;
+  profiles: Profile[];
   onWatchDir: (dir: string | null) => void;
+  onSetGlobal: (id: string | null) => void;
   onRefresh: () => void;
   busy: boolean;
 }) {
+  const globalProfile =
+    profiles.find((profile) => profile.id === settings.globalProfileId) ?? null;
+
+  // Chosen in the app but not yet on disk — the setting is only intent until
+  // the change is applied, like everything else here.
+  const globalPending =
+    globalProfile !== null &&
+    globalProfile.email.toLowerCase() !==
+      (status.global.email ?? "").toLowerCase();
   async function pickFolder() {
     const picked = await open({
       directory: true,
@@ -164,6 +181,29 @@ export function StatusStrip({
             <Button variant="ghost" onClick={onRefresh} disabled={busy}>
               Refresh
             </Button>
+          }
+          footer={
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+              <span className="text-[11px] text-ink-faint">Use profile</span>
+              <select
+                value={settings.globalProfileId ?? ""}
+                disabled={busy}
+                onChange={(event) =>
+                  onSetGlobal(event.target.value || null)
+                }
+                className="rounded-md border border-line-strong bg-surface px-2 py-1 text-[11px] text-ink outline-none focus:border-accent disabled:opacity-40"
+              >
+                <option value="">Leave unmanaged</option>
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.alias}
+                  </option>
+                ))}
+              </select>
+              {globalPending ? (
+                <Badge tone="warn">apply to switch</Badge>
+              ) : null}
+            </div>
           }
         />
         <IdentityCard

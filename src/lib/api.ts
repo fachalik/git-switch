@@ -48,6 +48,9 @@ export const api = {
   setWatchedDir: (dir: string | null) =>
     invoke<Overview>("set_watched_dir", { dir }),
 
+  setGlobalProfile: (id: string | null) =>
+    invoke<Overview>("set_global_profile", { id }),
+
   getStatus: () => invoke<Snapshot>("get_status"),
 
   exportProfiles: (path: string) => invoke<string>("export_profiles", { path }),

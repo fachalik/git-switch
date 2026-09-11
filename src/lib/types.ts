@@ -26,6 +26,8 @@ export interface ProfileInput {
 export interface Settings {
   watchedDir: string | null;
   recentDirs: string[];
+  /** Profile supplying the global `[user]` identity, if any. */
+  globalProfileId: string | null;
 }
 
 export interface KeyHealth {
@@ -72,9 +74,15 @@ export interface FileChange {
   orphan: boolean;
 }
 
+export interface PlanNote {
+  level: "info" | "warn";
+  message: string;
+}
+
 export interface Plan {
   changes: FileChange[];
   hasChanges: boolean;
+  notes: PlanNote[];
 }
 
 export interface ApplyReport {
